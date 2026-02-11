@@ -2,7 +2,9 @@ const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
 const Stock = require('./models/Stock');
+const History = require('./models/History');
 const axios = require('axios');
+const cron = require('node-cron');
 
 const app = express();
 
@@ -85,21 +87,111 @@ app.delete('/api/stocks/:id', async (req, res) => {
   }
 });
 
-// 获取 A 股实时行情 (腾讯接口示例)
+// 腾讯行情接口解析工具
 app.get('/api/market/prices', async (req, res) => {
   try {
-    const [stocks] = await db.query('SELECT symbol FROM user_stocks'); // 如果是 MongoDB 用 Stock.find()
-    const symbols = stocks.map(s => {
-      // A股代码转换：000300 -> sh000300
-      return s.symbol.startsWith('6') ? `sh${s.symbol}` : `sz${s.symbol}`;
+    const stocks = await Stock.find();
+    if (stocks.length === 0) return res.json({});
+
+    // 1. 构造腾讯要求的代码格式，例如 sz000001,sh600000
+    const queryIds = stocks.map(s => {
+      const prefix = s.type === 'etf' ? (s.symbol.startsWith('5') ? 'sh' : 'sz') : s.type;
+      return `${prefix}${s.symbol}`;
     }).join(',');
 
-    const response = await axios.get(`https://qt.gtimg.cn/q=${symbols}`);
-    // 腾讯接口返回的是字符串，需要解析（这里仅做示意，实际需根据返回值切割）
-    res.json({ raw: response.data }); 
+    // 2. 请求腾讯 API
+    const response = await axios.get(`https://qt.gtimg.cn/q=${queryIds}`, {
+      responseType: 'arraybuffer' // 腾讯返回的是 gbk 编码，需要处理
+    });
+    
+    // 简易解析逻辑：将返回的字符串拆解
+    const rawData = response.data.toString();
+    const priceMap = {};
+    
+    rawData.split(';').forEach(line => {
+      const parts = line.split('~');
+      if (parts.length > 3) {
+        const symbol = parts[2]; // 股票代码
+        const currentPrice = parseFloat(parts[3]); // 当前价格
+        priceMap[symbol] = currentPrice;
+      }
+    });
+
+    res.json(priceMap);
   } catch (err) {
-    res.status(500).send(err.message);
+    res.status(500).json({ error: err.message });
   }
+});
+
+app.post('/api/history/record', async (req, res) => {
+  const { profit } = req.body;
+  const today = new Date().toISOString().split('T')[0];
+  try {
+    // upsert: 如果今天已有记录则更新，没有则创建
+    await History.findOneAndUpdate(
+      { date: today },
+      { profit: profit },
+      { upsert: true, new: true }
+    );
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 3. 获取历史记录接口 (获取最近15天)
+app.get('/api/history', async (req, res) => {
+  const data = await History.find().sort({ date: 1 }).limit(15);
+  res.json(data);
+});
+
+const recordDailyProfit = async () => {
+  try {
+    const stocks = await Stock.find();
+    if (stocks.length === 0) return;
+
+    // 获取当前实时价格
+    const queryIds = stocks.map(s => {
+      const prefix = s.type === 'etf' ? (s.symbol.startsWith('5') ? 'sh' : 'sz') : s.type;
+      return `${prefix}${s.symbol}`;
+    }).join(',');
+
+    const response = await axios.get(`https://qt.gtimg.cn/q=${queryIds}`);
+    const rawData = response.data.toString();
+    const priceMap = {};
+    rawData.split(';').forEach(line => {
+      const parts = line.split('~');
+      if (parts.length > 3) priceMap[parts[2]] = parseFloat(parts[3]);
+    });
+
+    // 计算总盈亏
+    let totalProfit = 0;
+    stocks.forEach(s => {
+      const currentPrice = priceMap[s.symbol] || s.costPrice;
+      totalProfit += (currentPrice - s.costPrice) * s.quantity;
+    });
+
+    const today = new Date().toISOString().split('T')[0];
+    
+    // 存入数据库
+    await History.findOneAndUpdate(
+      { date: today },
+      { profit: totalProfit },
+      { upsert: true }
+    );
+    console.log(`[Cron] ${today} 收益记录成功: ${totalProfit}`);
+  } catch (err) {
+    console.error('[Cron] 自动记录失败:', err.message);
+  }
+};
+
+// 2. 设置定时任务：周一至周五，每天 15:05 执行 (收盘后5分钟)
+// 分 时 日 月 周
+cron.schedule('5 15 * * 1-5', () => {
+  console.log('正在执行收盘收益自动记录...');
+  recordDailyProfit();
+}, {
+  timezone: "Asia/Shanghai" // 确保使用北京时间
 });
 
 // --- 3. 启动服务 ---
