@@ -15,7 +15,8 @@
                 <div class="summary-value">
                     <span class="currency">￥</span>{{ totalInvestment.toLocaleString(undefined, {
                         minimumFractionDigits:
-                            2, maximumFractionDigits: 2 }) }}
+                            2, maximumFractionDigits: 2
+                    }) }}
                 </div>
             </div>
         </div>

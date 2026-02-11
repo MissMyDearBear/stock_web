@@ -60,8 +60,7 @@
 <script setup>
 import { ref, onMounted, computed, onUnmounted } from 'vue';
 import * as echarts from 'echarts';
-import axios from 'axios';
-import { getStocks } from '../api/stock';
+import { getStocks, getMarketPrices, getHistory, saveRecord } from '../api/stock';
 
 
 // --- 状态定义 ---
@@ -144,7 +143,7 @@ const renderChart = () => {
 
 const fetchPrices = async () => {
   try {
-    const res = await axios.get('http://localhost:3000/api/market/prices');
+    const res = await getMarketPrices();
     marketPrices.value = res.data;
     renderChart();
   } catch (err) {
@@ -215,7 +214,7 @@ const renderLineChart = (historyData) => {
 // 获取历史数据
 const loadHistory = async () => {
   try {
-    const res = await axios.get('http://localhost:3000/api/history');
+    const res = await getHistory();
     renderLineChart(res.data);
   } catch (err) {
     console.error("历史数据加载失败", err);
@@ -225,9 +224,7 @@ const loadHistory = async () => {
 // 保存今日数据快照
 const saveTodayRecord = async () => {
   try {
-    await axios.post('http://localhost:3000/api/history/record', {
-      profit: totalProfit.value
-    });
+    await saveRecord(totalProfit.value)
     alert("Record saved!");
     loadHistory(); // 刷新折线图
   } catch (err) {
