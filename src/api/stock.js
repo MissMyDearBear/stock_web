@@ -1,7 +1,7 @@
 import axios from 'axios';
 
-const HOST = 'http://101.35.132.84/:3500';
-const API_URL = '${HOST}/api/stocks';
+const HOST = 'http://101.35.132.84:3500';
+const API_URL = `${HOST}/api/stocks`;
 
 export const getStocks = () => axios.get(API_URL);
 export const addStock = (data) => axios.post(API_URL, data);

@@ -9,7 +9,25 @@ const cron = require('node-cron');
 const app = express();
 
 // --- 中间件配置 ---
-app.use(cors());
+// 更加显式的 CORS 配置
+app.use(cors({
+    origin: '*', // 允许所有来源
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+    credentials: true,
+    optionsSuccessStatus: 200 // 针对旧版浏览器的兼容
+}));
+// 额外保险：手动添加一个处理所有请求的 Header
+app.use((req, res, next) => {
+    res.header('Access-Control-Allow-Origin', '*');
+    res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+    res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
+    // 如果是预检请求 (OPTIONS)，直接返回 200
+    if (req.method === 'OPTIONS') {
+        return res.sendStatus(200);
+    }
+    next();
+});
 app.use(express.json());
 
 // --- 1. 数据库连接 ---
@@ -196,7 +214,7 @@ cron.schedule('5 15 * * 1-5', () => {
 });
 
 // --- 3. 启动服务 ---
-const PORT = 3000;
+const PORT = 3500;
 app.listen(PORT, () => {
     console.log(`🚀 后端服务已启动: http://localhost:${PORT}`);
 });
