@@ -3,8 +3,11 @@ const mongoose = require('mongoose');
 const cors = require('cors');
 const Stock = require('./models/Stock');
 const History = require('./models/History');
+const Suppose = require('./models/Suppose')
 const axios = require('axios');
 const cron = require('node-cron');
+const iconv = require('iconv-lite');
+const TI = require('technicalindicators');
 
 const app = express();
 
@@ -32,7 +35,7 @@ app.use(express.json());
 
 // --- 1. 数据库连接 ---
 // 使用你本机的硬件环境，建议保持 127.0.0.1 提高稳定性
-const mongoUrl = process.env.MONGO_URL || 'mongodb://db:27017/make_a_million';
+const mongoUrl = process.env.MONGO_URL || 'mongodb://127.0.0.1:27017/make_a_million';
 mongoose.connect(mongoUrl)
     .then(() => console.log('✅ MongoDB 已连接: 硬件 E5-2696V3 运行正常'))
     .catch(err => console.error('❌ MongoDB 连接失败:', err));
@@ -198,7 +201,6 @@ const recordDailyProfit = async () => {
             { profit: totalProfit },
             { upsert: true }
         );
-        console.log(`[Cron] ${today} 收益记录成功: ${totalProfit}`);
     } catch (err) {
         console.error('[Cron] 自动记录失败:', err.message);
     }
@@ -213,6 +215,276 @@ cron.schedule('5 15 * * 1-5', () => {
     timezone: "Asia/Shanghai" // 确保使用北京时间
 });
 
+// =============================
+// 工具函数
+// =============================
+const analyzeEngine = {
+
+    formatFullId: (code, type) => {
+        if (type === "sh" || type === "sz") return `${type}${code}`;
+        if (type === "etf") return `${code.startsWith("5") ? "sh" : "sz"}${code}`;
+        return `sh${code}`;
+    },
+
+    // 获取股票名称
+    fetchStockName: async (fullId) => {
+        try {
+            const resp = await axios.get(`https://qt.gtimg.cn/q=${fullId}`, {
+                // 必须指定为 arraybuffer，否则 axios 会尝试用 utf8 解释字节流
+                responseType: 'arraybuffer'
+            });
+            const data = iconv.decode(resp.data, 'gbk');
+            const parts = data.split("~");
+            return parts[1] || fullId;
+        } catch {
+            return fullId;
+        }
+    },
+
+    fetchKlines: async (fullId) => {
+        const url = `https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param=${fullId},day,,,250,qfq`;
+        try {
+            const resp = await axios.get(url);
+            const data = resp.data.data[fullId];
+            const kline = data.day || data.qfqday;
+            if (!kline) return null;
+
+            return kline.map(i => ({
+                Date: i[0],
+                Open: +i[1],
+                Close: +i[2],
+                High: +i[3],
+                Low: +i[4],
+                Volume: +i[5]
+            }));
+        } catch {
+            return null;
+        }
+    },
+
+    fetchIndexKlines: async (indexId = "sh000001") => {
+        const url = `https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param=${indexId},day,,,250,qfq`;
+        try {
+            const resp = await axios.get(url);
+            const data = resp.data.data[indexId];
+            const kline = data.day || data.qfqday;
+            return kline.map(i => +i[2]);
+        } catch {
+            return null;
+        }
+    }
+};
+
+// =============================
+// 数学函数
+// =============================
+
+function calculateBeta(stockCloses, indexCloses) {
+    const rs = [];
+    const ri = [];
+
+    for (let i = 1; i < stockCloses.length; i++) {
+        rs.push((stockCloses[i] - stockCloses[i - 1]) / stockCloses[i - 1]);
+        ri.push((indexCloses[i] - indexCloses[i - 1]) / indexCloses[i - 1]);
+    }
+
+    const meanS = rs.reduce((a, b) => a + b) / rs.length;
+    const meanI = ri.reduce((a, b) => a + b) / ri.length;
+
+    let cov = 0, varI = 0;
+
+    for (let i = 0; i < rs.length; i++) {
+        cov += (rs[i] - meanS) * (ri[i] - meanI);
+        varI += Math.pow((ri[i] - meanI), 2);
+    }
+
+    return cov / varI;
+}
+
+function calculateSharpe(closes) {
+    const r = [];
+    for (let i = 1; i < closes.length; i++) {
+        r.push((closes[i] - closes[i - 1]) / closes[i - 1]);
+    }
+    const mean = r.reduce((a, b) => a + b) / r.length;
+    const variance = r.reduce((s, x) => s + Math.pow(x - mean, 2), 0) / r.length;
+    const std = Math.sqrt(variance);
+    return std === 0 ? 0 : mean / std;
+}
+
+// =============================
+// 主接口
+// =============================
+app.get("/api/market/analysis/:code", async (req, res) => {
+
+    const { code } = req.params;
+    const { type } = req.query;
+
+    if (!type) return res.status(400).json({ error: "请提供 type 参数" });
+
+    try {
+
+        const fullId = analyzeEngine.formatFullId(code, type);
+
+        const [kData, indexData, name] = await Promise.all([
+            analyzeEngine.fetchKlines(fullId),
+            analyzeEngine.fetchIndexKlines(),
+            analyzeEngine.fetchStockName(fullId)
+        ]);
+
+        if (!kData || kData.length < 120)
+            return res.status(404).json({ error: "行情数据不足" });
+
+        const close = kData.map(d => d.Close);
+        const high = kData.map(d => d.High);
+        const low = kData.map(d => d.Low);
+
+        const last = kData.at(-1);
+        const prev = kData.at(-2);
+
+        let buyScore = 0, sellScore = 0;
+        let riskScore = 0;
+
+        // ===== 技术指标 =====
+
+        const sma5 = TI.SMA.calculate({ period: 5, values: close });
+        const sma20 = TI.SMA.calculate({ period: 20, values: close });
+        const sma60 = TI.SMA.calculate({ period: 60, values: close });
+        const rsi = TI.RSI.calculate({ period: 7, values: close });
+        const atr = TI.ATR.calculate({ high, low, close, period: 14 });
+
+        const lastRSI = rsi.at(-1);
+        const lastATR = atr.at(-1);
+        const atrRatio = lastATR / last.Close;
+
+        // ===== ATR 因子 =====
+        if (atrRatio > 0.05) { sellScore += 2; riskScore += 15; }
+        else if (atrRatio < 0.02) { buyScore += 1; }
+
+        // ===== 涨跌停识别 =====
+        const pct = (last.Close - prev.Close) / prev.Close * 100;
+        if (pct >= 9.8) { sellScore += 2; riskScore += 10; }
+        if (pct <= -9.8) { buyScore += 2; }
+
+        // ===== 多周期共振 =====
+        let resonance = 0;
+        if (last.Close > sma5.at(-1)) resonance++;
+        if (sma5.at(-1) > sma20.at(-1)) resonance++;
+        if (sma20.at(-1) > sma60.at(-1)) resonance++;
+
+        buyScore += resonance;
+
+        // ===== RSI =====
+        if (lastRSI > 70) { sellScore += 2; riskScore += 10; }
+        if (lastRSI < 30) { buyScore += 2; }
+
+        // ===== Beta =====
+        let beta = 0;
+        if (indexData) {
+            beta = calculateBeta(close.slice(-120), indexData.slice(-120));
+            if (beta > 1.2) riskScore += 10;
+            if (beta < 0.8) buyScore += 1;
+        }
+
+        // ===== Sharpe =====
+        const sharpe = calculateSharpe(close.slice(-120));
+        if (sharpe > 0.8) buyScore += 2;
+        if (sharpe < 0.2) sellScore += 2;
+
+        // ===== 概率模型 =====
+        const raw = buyScore - sellScore;
+        const prob = 1 / (1 + Math.exp(-raw / 3));
+
+        const buyProb = +(prob * 100).toFixed(1);
+        const sellProb = +(100 - buyProb).toFixed(1);
+
+        riskScore = Math.min(100, riskScore + atrRatio * 800).toFixed(1);
+
+        let decision = "HOLD";
+        if (buyProb > 65) decision = "BUY";
+        if (sellProb > 65) decision = "SELL";
+        const ret = {
+            code,
+            name,
+            fullId,
+            date: last.Date,
+            price: last.Close,
+            decision,
+            probability: {
+                buy: buyProb,
+                sell: sellProb
+            },
+            riskScore,
+            advancedFactors: {
+                beta: beta.toFixed(2),
+                sharpe: sharpe.toFixed(2),
+                resonance
+            },
+            indicators: {
+                rsi: lastRSI.toFixed(1),
+                atrRatio: (atrRatio * 100).toFixed(2) + "%",
+                dailyChange: pct.toFixed(2) + "%"
+            }
+        }
+        const jsonString = JSON.stringify(ret);
+        console.log(jsonString);
+        await Suppose.findOneAndUpdate(
+            { symbol: code }, // 查询条件
+            {
+                symbol: code,
+                name: name, // ret 对象中的名称
+                type: type, // 前端传来的 sh/sz/etf
+                suppose: jsonString, // 存入转换后的字符串
+                updatedAt: Date.now()
+            },
+            { upsert: true, new: true } // 如果不存在则创建
+        );
+
+        res.json(ret);
+
+    } catch (err) {
+        res.status(500).json({ error: "分析失败", message: err.message });
+    }
+});
+
+// ==========================================
+// 获取所有已保存的推演记录
+// ==========================================
+app.get('/api/market/suppose/list', async (req, res) => {
+    try {
+        // 按更新时间倒序排列（最近更新的排在前面）
+        const records = await Suppose.find().sort({ updatedAt: -1 });
+
+        // 处理数据：将字符串形式的 suppose 字段还原为 JSON 对象
+        const formattedRecords = records.map(item => {
+            let detail = {};
+            try {
+                detail = JSON.parse(item.suppose);
+            } catch (e) {
+                detail = { error: "解析明细失败" };
+            }
+
+            return {
+                _id: item._id,
+                symbol: item.symbol,
+                name: item.name,
+                type: item.type,
+                updatedAt: item.updatedAt,
+                // 将还原后的对象直接放在这里
+                data: detail
+            };
+        });
+
+        res.json({
+            success: true,
+            count: formattedRecords.length,
+            list: formattedRecords
+        });
+    } catch (err) {
+        console.error("获取列表失败:", err);
+        res.status(500).json({ error: "服务器内部错误", message: err.message });
+    }
+});
 // --- 3. 启动服务 ---
 const PORT = 3500;
 app.listen(PORT, () => {

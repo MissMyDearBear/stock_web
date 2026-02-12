@@ -16,4 +16,11 @@ export const saveRecord = (profit) => axios.post(`${HISTORY_URL}/record`, { prof
 
 // --- 新增：行情获取接口 ---
 export const getMarketPrices = () => axios.get(`${HOST}/api/market/prices`);
+// 2. 执行技术推演分析 (接收 code 和 type)
+// 调用示例: getMarketAnalysis('600519', 'sh')
+export const getMarketAnalysis = (code, type) =>
+    axios.get(`${HOST}/api/market/analysis/${code}`, { params: { type } });
 
+// 3. 获取已保存的推演列表
+// 调用示例: getSupposeList()
+export const getSupposeList = () => axios.get(`${HOST}/api/market/suppose/list`);
