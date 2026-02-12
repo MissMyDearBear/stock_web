@@ -21,81 +21,88 @@
             </div>
         </div>
 
-        <div class="table-card">
-            <table class="stock-table">
-                <thead>
-                    <tr>
-                        <th>Symbol</th>
-                        <th class="text-right">Name</th>
-                        <th class="text-right">Cost Price</th>
-                        <th class="text-right">Quantity</th>
-                        <th class="text-right">Total</th>
-                        <th class="text-center">Actions</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <tr v-for="stock in stocks" :key="stock._id">
-                        <td class="symbol-cell">
-                            {{ stock.symbol }}
-                            <span :class="['type-badge', (stock.type || 'sh').toLowerCase()]">
-                                {{ (stock.type || 'sh').toUpperCase() }}
-                            </span>
-                        </td>
-                        <td class="text-right">{{ stock.name }}</td>
-                        <td class="text-right font-mono">￥{{ stock.costPrice.toFixed(4) }}</td>
-                        <td class="text-right">{{ stock.quantity }}</td>
-                        <td class="text-right total-cell font-mono">
-                            ￥{{ (stock.costPrice * stock.quantity).toLocaleString() }}
-                        </td>
-                        <td class="text-center">
-                            <button @click="openModal(stock)" class="btn-edit">Edit</button>
-                            <button @click="handleDelete(stock._id)" class="btn-delete">Delete</button>
-                        </td>
-                    </tr>
-                    <tr v-if="stocks.length === 0">
-                        <td colspan="5" class="empty-state">No assets found. Start by adding one!</td>
-                    </tr>
-                </tbody>
-            </table>
-        </div>
 
-        <div v-if="showModal" class="modal-overlay">
-            <div class="modal-content">
-                <h3>{{ isEditing ? 'Edit Asset' : 'Add New Asset' }}</h3>
+        <div v-for="stock in stocks" :key="stock._id" class="mobile-card">
+            <div class="card-main">
+                <div class="left">
+                    <div class="symbol">
+                        {{ stock.symbol }}
+                        <span :class="['type-badge', (stock.type || 'sh').toLowerCase()]">
+                            {{ (stock.type || 'sh').toUpperCase() }}
+                        </span>
+                    </div>
 
-                <div class="form-group">
-                    <div class="input-item">
-                        <label>Stock Symbol</label>
-                        <input v-model="currentForm.symbol" type="text" placeholder="000300" />
-                    </div>
-                    <div class="input-item">
-                        <label>Stock Name</label>
-                        <input v-model="currentForm.name" type="text" placeholder="沪深300" />
-                    </div>
-                    <div class="input-item">
-                        <label>Asset Type</label>
-                        <select v-model="currentForm.type" class="type-select">
-                            <option value="sh">SH (沪市)</option>
-                            <option value="sz">SZ (深市)</option>
-                            <option value="etf">ETF (基金)</option>
-                        </select>
-                    </div>
-                    <div class="input-item">
-                        <label>Cost Price</label>
-                        <input v-model.number="currentForm.costPrice" type="number" step="0.0001" />
-                    </div>
-                    <div class="input-item">
-                        <label>Quantity</label>
-                        <input v-model.number="currentForm.quantity" type="number" />
+                    <div class="name">{{ stock.name }}</div>
+
+                    <div class="meta">
+                        <span>Cost ￥{{ stock.costPrice.toFixed(4) }}</span>
+                        <span>Qty {{ stock.quantity }}</span>
                     </div>
                 </div>
 
-                <div class="modal-actions">
-                    <button @click="showModal = false" class="btn-cancel">Cancel</button>
-                    <button @click="handleSubmit" class="btn-save">Save</button>
+                <div class="right">
+                    <div class="total">
+                        ￥{{ (stock.costPrice * stock.quantity).toLocaleString() }}
+                    </div>
+                    <div class="sub">Total Value</div>
                 </div>
             </div>
+
+            <div class="card-actions">
+                <button @click="openModal(stock)" class="action edit">Edit</button>
+                <button @click="handleDelete(stock._id)" class="action delete">Delete</button>
+            </div>
         </div>
+
+
+        <!-- Bottom Sheet -->
+        <transition name="fade">
+            <div v-if="showModal" class="modal-overlay" @click.self="showModal = false">
+                <transition name="slide">
+                    <div class="modal-content">
+                        <div class="sheet-handle"></div>
+
+                        <h3>{{ isEditing ? 'Edit Asset' : 'Add New Asset' }}</h3>
+
+                        <div class="form-group">
+                            <div class="input-item">
+                                <label>Stock Symbol</label>
+                                <input v-model="currentForm.symbol" type="text" />
+                            </div>
+
+                            <div class="input-item">
+                                <label>Stock Name</label>
+                                <input v-model="currentForm.name" type="text" />
+                            </div>
+
+                            <div class="input-item">
+                                <label>Asset Type</label>
+                                <select v-model="currentForm.type">
+                                    <option value="sh">SH</option>
+                                    <option value="sz">SZ</option>
+                                    <option value="etf">ETF</option>
+                                </select>
+                            </div>
+
+                            <div class="input-item">
+                                <label>Cost Price</label>
+                                <input v-model.number="currentForm.costPrice" type="number" step="0.0001" />
+                            </div>
+
+                            <div class="input-item">
+                                <label>Quantity</label>
+                                <input v-model.number="currentForm.quantity" type="number" />
+                            </div>
+                        </div>
+
+                        <div class="modal-actions">
+                            <button @click="showModal = false" class="btn-cancel">Cancel</button>
+                            <button @click="handleSubmit" class="btn-save">Save</button>
+                        </div>
+                    </div>
+                </transition>
+            </div>
+        </transition>
     </div>
 </template>
 
@@ -159,183 +166,222 @@ onMounted(loadData);
 </script>
 
 <style scoped>
-/* 容器与布局 */
 .portfolio-container {
     max-width: 1100px;
     margin: 0 auto;
-    padding: 40px 20px;
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    padding: 24px 16px 100px;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto;
 }
 
-/* 头部样式 */
+/* ================= Header ================= */
 .header {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 30px;
+    margin-bottom: 24px;
 }
 
 .title-group h1 {
-    font-size: 28px;
-    color: #1e293b;
-    margin: 0 0 8px 0;
-}
-
-.title-group p {
-    color: #64748b;
+    font-size: 24px;
     margin: 0;
 }
 
-/* 按钮基础样式 */
+.title-group p {
+    font-size: 14px;
+    color: #64748b;
+    margin: 4px 0 0;
+}
+
 .btn-add {
-    background-color: #2563eb;
+    background: linear-gradient(135deg, #2563eb, #1d4ed8);
     color: white;
     border: none;
-    padding: 10px 24px;
-    border-radius: 8px;
-    font-weight: bold;
+    padding: 10px 18px;
+    border-radius: 12px;
+    font-weight: 600;
     cursor: pointer;
-    transition: background 0.3s;
+    box-shadow: 0 4px 14px rgba(37, 99, 235, 0.3);
+    transition: 0.2s;
+}
+
+.btn-add:active {
+    transform: scale(0.97);
+}
+
+/* 手机端浮动按钮 */
+@media (max-width: 768px) {
+    .btn-add {
+        position: fixed;
+        bottom: 24px;
+        right: 20px;
+        padding: 16px;
+        border-radius: 50%;
+        font-size: 20px;
+        width: 56px;
+        height: 56px;
+    }
+
+    .btn-add span {
+        display: none;
+    }
+}
+
+/* ================= Summary ================= */
+.summary-card {
+    background: linear-gradient(135deg, #1e293b, #334155);
+    padding: 20px;
+    border-radius: 18px;
+    margin-bottom: 20px;
+    color: white;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.15);
+}
+
+.summary-value {
+    font-size: 30px;
+    font-weight: 800;
+}
+
+/* ================= Mobile Cards ================= */
+.mobile-card {
+    background: linear-gradient(145deg, #ffffff, #f8fafc);
+    border-radius: 20px;
+    padding: 18px;
+    margin-bottom: 16px;
+    border: 1px solid #e2e8f0;
+    box-shadow: 0 8px 24px rgba(15, 23, 42, 0.06);
+    transition: 0.2s ease;
+}
+
+.mobile-card:active {
+    transform: scale(0.98);
+}
+
+.card-main {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+}
+
+.left {
+    flex: 1;
+}
+
+.symbol {
+    font-size: 18px;
+    font-weight: 700;
+    color: #0f172a;
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 6px;
 }
 
-.btn-add:hover {
-    background-color: #1d4ed8;
-}
-
-/* 表格卡片样式 */
-.table-card {
-    background: white;
-    border-radius: 12px;
-    border: 1px solid #e2e8f0;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-    overflow: hidden;
-}
-
-.stock-table {
-    width: 100%;
-    border-collapse: collapse;
-    text-align: left;
-}
-
-.stock-table th {
-    background-color: #f8fafc;
-    padding: 16px;
-    font-size: 13px;
-    font-weight: 600;
+.name {
+    font-size: 14px;
     color: #64748b;
-    text-transform: uppercase;
-    border-bottom: 1px solid #e2e8f0;
+    margin-top: 4px;
 }
 
-.stock-table td {
-    padding: 16px;
-    border-bottom: 1px solid #f1f5f9;
-    color: #334155;
+.meta {
+    font-size: 12px;
+    color: #94a3b8;
+    margin-top: 8px;
+    display: flex;
+    gap: 12px;
 }
 
-.stock-table tr:hover {
-    background-color: #f8fafc;
-}
-
-.symbol-cell {
-    font-weight: 700;
-    color: #1e293b;
-}
-
-.total-cell {
-    font-weight: 700;
-    color: #2563eb;
-}
-
-.text-right {
+.right {
     text-align: right;
 }
 
-.text-center {
-    text-align: center;
-}
-
-.font-mono {
-    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-}
-
-.btn-edit {
+.total {
+    font-size: 20px;
+    font-weight: 800;
     color: #2563eb;
-    background: none;
-    border: none;
-    cursor: pointer;
-    margin-right: 15px;
-    font-weight: 500;
 }
 
-.btn-delete {
-    color: #ef4444;
-    background: none;
-    border: none;
-    cursor: pointer;
-    font-weight: 500;
-}
-
-.empty-state {
-    padding: 60px;
-    text-align: center;
+.sub {
+    font-size: 11px;
     color: #94a3b8;
+    margin-top: 4px;
 }
 
-/* 模态框样式 */
+.card-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 16px;
+    margin-top: 14px;
+    padding-top: 12px;
+    border-top: 1px solid #f1f5f9;
+}
+
+.action {
+    background: none;
+    border: none;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    padding: 4px 0;
+}
+
+.action.edit {
+    color: #2563eb;
+}
+
+.action.delete {
+    color: #ef4444;
+}
+
+/* ================= Bottom Sheet ================= */
 .modal-overlay {
     position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background: rgba(15, 23, 42, 0.5);
-    backdrop-filter: blur(4px);
+    inset: 0;
+    background: rgba(15, 23, 42, 0.55);
+    backdrop-filter: blur(8px);
     display: flex;
-    align-items: center;
+    align-items: flex-end;
     justify-content: center;
     z-index: 1000;
 }
 
 .modal-content {
-    background: white;
-    padding: 32px;
-    border-radius: 16px;
     width: 100%;
-    max-width: 400px;
-    box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1);
+    max-width: 520px;
+    background: white;
+    border-radius: 22px 22px 0 0;
+    padding: 24px 20px 30px;
+    box-shadow: 0 -10px 40px rgba(0, 0, 0, 0.15);
+    max-height: 90vh;
+    overflow-y: auto;
+}
+
+.sheet-handle {
+    width: 40px;
+    height: 4px;
+    background: #cbd5e1;
+    border-radius: 10px;
+    margin: 0 auto 16px;
 }
 
 .form-group {
     display: flex;
     flex-direction: column;
-    gap: 16px;
+    gap: 14px;
 }
 
-.input-item label {
-    display: block;
-    font-size: 14px;
-    font-weight: 500;
-    margin-bottom: 6px;
-    color: #475569;
-}
-
-.input-item input {
+.input-item input,
+select {
     width: 100%;
-    padding: 12px;
+    padding: 12px 14px;
+    border-radius: 12px;
     border: 1px solid #e2e8f0;
-    border-radius: 8px;
-    outline: none;
-    box-sizing: border-box;
-    /* 确保padding不撑开宽度 */
+    transition: 0.2s;
 }
 
-.input-item input:focus {
+.input-item input:focus,
+select:focus {
     border-color: #2563eb;
-    ring: 2px #bfdbfe;
+    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15);
+    outline: none;
 }
 
 .modal-actions {
@@ -346,99 +392,45 @@ onMounted(loadData);
 
 .btn-cancel {
     flex: 1;
-    padding: 12px;
-    background: white;
-    border: 1px solid #e2e8f0;
-    border-radius: 8px;
-    cursor: pointer;
-    color: #64748b;
+    padding: 14px;
+    background: #f1f5f9;
+    border: none;
+    border-radius: 12px;
 }
 
 .btn-save {
     flex: 1;
-    padding: 12px;
-    background: #2563eb;
+    padding: 14px;
+    background: linear-gradient(135deg, #2563eb, #1d4ed8);
     color: white;
     border: none;
-    border-radius: 8px;
-    cursor: pointer;
+    border-radius: 12px;
     font-weight: 600;
 }
 
-/* 总览统计卡片 */
-.summary-card {
-    background: linear-gradient(135deg, #1e293b 0%, #334155 100%);
-    padding: 24px;
-    border-radius: 16px;
-    margin-bottom: 24px;
-    color: white;
-    box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+/* ================= Transitions ================= */
+.fade-enter-active,
+.fade-leave-active {
+    transition: opacity 0.25s ease;
 }
 
-.summary-label {
-    display: block;
-    font-size: 14px;
-    color: #94a3b8;
-    margin-bottom: 8px;
-    font-weight: 500;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
+.fade-enter-from,
+.fade-leave-to {
+    opacity: 0;
 }
 
-.summary-value {
-    font-size: 32px;
-    font-weight: 800;
-    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+.slide-enter-active {
+    transition: transform 0.3s cubic-bezier(.25, .8, .25, 1);
 }
 
-.summary-value .currency {
-    font-size: 20px;
-    margin-right: 4px;
-    color: #60a5fa;
-    /* 亮蓝色货币符号 */
+.slide-enter-from {
+    transform: translateY(100%);
 }
 
-/* 类型标签样式 */
-.type-badge {
-    font-size: 10px;
-    padding: 2px 6px;
-    border-radius: 4px;
-    margin-left: 8px;
-    vertical-align: middle;
-    font-weight: 800;
-}
-
-.type-badge.sh {
-    background-color: #fee2e2;
-    color: #ef4444;
-}
-
-/* 红色系 */
-.type-badge.sz {
-    background-color: #dcfce7;
-    color: #22c55e;
-}
-
-/* 绿色系 */
-.type-badge.etf {
-    background-color: #fef9c3;
-    color: #ca8a04;
-}
-
-/* 黄色系 */
-
-/* 下拉框样式 */
-.type-select {
-    width: 100%;
-    padding: 12px;
-    border: 1px solid #e2e8f0;
-    border-radius: 8px;
-    background-color: white;
-    outline: none;
-    cursor: pointer;
-}
-
-.type-select:focus {
-    border-color: #2563eb;
+/* iPhone 安全区 */
+@supports (padding: max(0px)) {
+    .modal-content {
+        padding-bottom: max(30px, env(safe-area-inset-bottom));
+    }
 }
 </style>
