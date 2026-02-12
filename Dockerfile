@@ -1,8 +1,10 @@
 # 阶段 1: 编译打包
 FROM node:22-alpine AS build-stage
 WORKDIR /app
+# 设置镜像源加速
+RUN npm config set registry https://registry.npmmirror.com
 COPY package*.json ./
-RUN npm install
+RUN npm install --verbose
 COPY . .
 RUN npm run build
 
