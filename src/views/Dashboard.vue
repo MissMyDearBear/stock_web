@@ -61,7 +61,7 @@
 import { ref, onMounted, computed, onUnmounted } from 'vue';
 import * as echarts from 'echarts';
 import axios from 'axios';
-import { getStocks, getMarketPrices, getHistory, saveRecord} from '../api/stock';
+import { getStocks, getMarketPrices, getHistory, saveRecord } from '../api/stock';
 
 
 // --- 状态定义 ---
@@ -251,53 +251,130 @@ onUnmounted(() => {
 .dashboard-wrapper {
   max-width: 1200px;
   margin: 0 auto;
-  padding: 40px 20px;
+  padding: 32px 16px;
   font-family: system-ui, sans-serif;
 }
 
+/* ======================
+   Header
+====================== */
 .dashboard-header {
-  margin-bottom: 32px;
+  margin-bottom: 24px;
 }
 
 .header-main {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
 }
 
 .dashboard-header h1 {
-  font-size: 32px;
+  font-size: 28px;
   color: #1e293b;
   margin: 0;
 }
 
 .dashboard-header p {
   color: #64748b;
-  margin-top: 8px;
+  margin-top: 6px;
+  font-size: 14px;
 }
 
+/* ======================
+   主体布局
+====================== */
 .dashboard-content {
   display: grid;
-  grid-template-columns: 350px 1fr;
-  gap: 30px;
+  grid-template-columns: 320px 1fr;
+  gap: 24px;
 }
 
+/* 小屏直接单列 */
+@media (max-width: 1024px) {
+  .dashboard-content {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ======================
+   统计卡片区域
+====================== */
 .stats-column {
-  display: flex;
-  flex-direction: column;
-  gap: 20px;
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 16px;
 }
 
+/* 手机改成 2 列卡片 */
+@media (max-width: 640px) {
+  .stats-column {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .stats-column .info-card {
+    padding: 16px;
+  }
+}
+
+/* ======================
+   卡片样式
+====================== */
 .info-card {
   background: white;
-  padding: 24px;
-  border-radius: 20px;
+  padding: 20px;
+  border-radius: 18px;
   border: 1px solid #e2e8f0;
-  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.04);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
 }
 
+.info-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 16px rgba(0, 0, 0, 0.06);
+}
+
+.label {
+  display: block;
+  font-size: 12px;
+  color: #64748b;
+  margin-bottom: 6px;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+}
+
+.value {
+  font-size: 22px;
+  font-weight: 700;
+  color: #1e293b;
+}
+
+.sub-value {
+  font-size: 12px;
+  margin-top: 4px;
+  opacity: 0.85;
+}
+
+/* ======================
+   高亮卡
+====================== */
 .info-card.highlight {
   background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
+  color: white;
+  border: none;
+}
+
+.highlight .label,
+.highlight .value {
+  color: white;
+}
+
+/* ======================
+   盈亏卡（修正颜色语义）
+====================== */
+.info-card.profit-card.down {
+  background: linear-gradient(135deg, #22c55e 0%, #166534 100%);
   color: white;
   border: none;
 }
@@ -308,73 +385,62 @@ onUnmounted(() => {
   border: none;
 }
 
-.info-card.profit-card.down {
-  background: linear-gradient(135deg, #22c55e 0%, #166534 100%);
-  color: white;
-  border: none;
-}
-
-.label {
-  display: block;
-  font-size: 14px;
-  color: #64748b;
-  margin-bottom: 8px;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-}
-
-.highlight .label,
-.profit-card .label {
-  color: rgba(255, 255, 255, 0.8);
-}
-
-.value {
-  font-size: 24px;
-  font-weight: 700;
-  color: #1e293b;
-}
-
-.highlight .value,
+.profit-card .label,
 .profit-card .value {
-  color: white !important;
+  color: white;
 }
 
-.sub-value {
-  font-size: 13px;
-  margin-top: 4px;
-  opacity: 0.9;
-}
-
-/* 市值动态颜色 */
+/* ======================
+   市值动态颜色
+====================== */
 .market-value-card.text-up .value {
   color: #ef4444;
 }
 
 .market-value-card.text-down .value {
-  color: #22c55e;
+  color: #ef4444;
 }
 
+/* ======================
+   图表卡
+====================== */
 .chart-card {
   background: white;
-  padding: 30px;
-  border-radius: 24px;
+  padding: 20px;
+  border-radius: 20px;
   border: 1px solid #e2e8f0;
 }
 
 .echarts-box {
   width: 100%;
-  height: 450px;
+  height: 380px;
 }
 
+/* 手机图表高度降低 */
+@media (max-width: 640px) {
+  .echarts-box {
+    height: 280px;
+  }
+}
+
+/* ======================
+   按钮
+====================== */
 .btn-refresh {
   background: white;
   border: 1px solid #e2e8f0;
-  padding: 8px 16px;
+  padding: 8px 14px;
   border-radius: 8px;
   cursor: pointer;
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
+  font-size: 13px;
+  transition: all 0.2s ease;
+}
+
+.btn-refresh:hover {
+  background: #f1f5f9;
 }
 
 .btn-refresh:disabled {
@@ -382,9 +448,12 @@ onUnmounted(() => {
   opacity: 0.6;
 }
 
+/* ======================
+   历史区域
+====================== */
 .history-section {
-  margin-top: 40px;
-  padding-top: 30px;
+  margin-top: 32px;
+  padding-top: 24px;
   border-top: 1px solid #f1f5f9;
 }
 
@@ -392,30 +461,25 @@ onUnmounted(() => {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 20px;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+  gap: 10px;
 }
 
 .line-chart-box {
   width: 100%;
-  height: 250px;
+  height: 240px;
 }
 
-.btn-save-record {
-  background: #f8fafc;
-  border: 1px solid #e2e8f0;
-  padding: 6px 12px;
-  border-radius: 6px;
-  font-size: 12px;
-  color: #2563eb;
-  cursor: pointer;
-  font-weight: 600;
+@media (max-width: 640px) {
+  .line-chart-box {
+    height: 200px;
+  }
 }
 
-.btn-save-record:hover {
-  background: #eff6ff;
-  border-color: #bfdbfe;
-}
-
+/* ======================
+   Spinner
+====================== */
 .spinner {
   width: 14px;
   height: 14px;
@@ -428,12 +492,6 @@ onUnmounted(() => {
 @keyframes spin {
   to {
     transform: rotate(360deg);
-  }
-}
-
-@media (max-width: 900px) {
-  .dashboard-content {
-    grid-template-columns: 1fr;
   }
 }
 </style>
