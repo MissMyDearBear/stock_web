@@ -4,5 +4,5 @@ COPY package*.json ./
 RUN npm install
 COPY . .
 # 暴露后端端口
-EXPOSE 3000
+EXPOSE 3500
 CMD ["node", "server.js"]

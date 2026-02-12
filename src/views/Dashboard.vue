@@ -60,7 +60,8 @@
 <script setup>
 import { ref, onMounted, computed, onUnmounted } from 'vue';
 import * as echarts from 'echarts';
-import { getStocks, getMarketPrices, getHistory, saveRecord } from '../api/stock';
+import axios from 'axios';
+import { getStocks, getMarketPrices, getHistory, saveRecord} from '../api/stock';
 
 
 // --- 状态定义 ---
@@ -224,7 +225,7 @@ const loadHistory = async () => {
 // 保存今日数据快照
 const saveTodayRecord = async () => {
   try {
-    await saveRecord(totalProfit.value)
+    await saveRecord(totalProfit.value);
     alert("Record saved!");
     loadHistory(); // 刷新折线图
   } catch (err) {
