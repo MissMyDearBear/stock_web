@@ -18,6 +18,6 @@ RUN npm install --verbose --ignore-scripts
 # 5. 最后拷贝源码（因为源码改动最频繁）
 COPY . .
 
-EXPOSE 3500
+EXPOSE 3000
 
 CMD ["node", "server.js"]

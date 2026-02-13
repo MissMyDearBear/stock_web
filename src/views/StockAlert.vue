@@ -1,6 +1,5 @@
 <template>
   <div class="analysis-container">
-    <!-- 搜索卡片 -->
     <el-card class="search-card">
       <template #header>
         <div class="card-header">
@@ -30,9 +29,8 @@
       </el-form>
     </el-card>
 
-    <!-- 分析结果 -->
     <div v-if="result" class="result-area">
-      <!-- 核心信息 -->
+      <!-- 股票基础信息 -->
       <el-card class="decision-card">
         <div class="stock-header">
           <div>
@@ -44,16 +42,11 @@
 
         <div class="decision-box" :class="getDecisionClass(result.decision)">
           <div class="dec-text">{{ result.decision }}</div>
-          <div class="prob">
-            买入概率 {{ result.probability?.buy?.toFixed(1) ?? 0 }}%
-          </div>
-          <div class="prob">
-            卖出概率 {{ result.probability?.sell?.toFixed(1) ?? 0 }}%
-          </div>
+          <div class="prob">买入概率 {{ (Number(result.probability?.buy) * 100).toFixed(1) }}%</div>
         </div>
       </el-card>
 
-      <!-- 核心指标 -->
+      <!-- 核心技术指标 -->
       <h4 class="section-title">核心技术指标</h4>
       <div class="indicator-grid">
         <el-card v-for="(val, key) in result.indicators" :key="key" class="indicator-card" shadow="never">
@@ -66,7 +59,9 @@
             </el-tooltip>
           </div>
           <div class="mini-value">
-            {{ formatIndicator(key, val) }}
+            <span v-if="key === 'atrRatio'">{{ Number(val).toFixed(4) }}</span>
+            <span v-else-if="key === 'dailyChange'">{{ (Number(val) * 100).toFixed(2) }}%</span>
+            <span v-else>{{ Number(val).toFixed(2) }}</span>
           </div>
         </el-card>
       </div>
@@ -85,7 +80,12 @@
                   </el-icon>
                 </el-tooltip>
               </div>
-              <div class="f-value">{{ getFactorValue(factor.key) }}</div>
+              <div class="f-value">
+                {{ getSafeFactor(factor.key) }}
+                <span class="trend-icon" :class="getTrendClass(factor.key)">
+                  {{ getTrendIcon(factor.key) }}
+                </span>
+              </div>
             </div>
           </el-col>
         </el-row>
@@ -159,52 +159,44 @@ const getIndicatorTip = (key) => {
   const tips = {
     rsi: 'RSI: 相对强弱指数。>70超买，<30超卖。',
     atrRatio: 'ATR Ratio: 波动率因子，反映股价震荡剧烈程度。',
-    dailyChange: 'Daily Change: 当日涨跌幅。',
-    beta: 'Beta: 衡量相对于大盘波动性。',
-    sharpe: 'Sharpe: 每承担一单位风险获得的超额回报。'
+    dailyChange: 'Daily Change: 当日涨跌幅。'
   }
   return tips[key] || '技术指标数据'
 }
 
-// 高级因子说明
+// --- 高级因子定义 ---
 const factorDetails = [
-  { key: 'trend', label: '趋势分', tip: '多周期均线趋势评分' },
-  { key: 'momentum', label: '动量分', tip: 'MACD/KDJ/RSI 动量评分' },
-  { key: 'volume', label: '量能分', tip: '成交量与均线对比' },
-  { key: 'accumulation', label: '吸筹分', tip: '主力吸筹识别' },
-  { key: 'multiTimeframe', label: '多周期共振', tip: '日线+周线信号一致' },
-  { key: 'relative', label: '相对强度', tip: 'Beta/Sharpe 评分' },
-  { key: 'riskPenalty', label: '风险惩罚', tip: '风险控制因子' },
-  { key: 'beta', label: 'Beta (β)', tip: '衡量相对于大盘的波动性' },
-  { key: 'sharpe', label: 'Sharpe', tip: '夏普比率' }
+  { key: 'trend', label: '趋势分', tip: '价格趋势评分，越高趋势越明显' },
+  { key: 'momentum', label: '动量分', tip: '股价动量评分，反映涨跌速度' },
+  { key: 'volume', label: '量能分', tip: '成交量相关评分' },
+  { key: 'accumulation', label: '主力吸筹分', tip: '反映主力买入行为' },
+  { key: 'multiTimeframe', label: '共振分', tip: '多周期信号一致性评分' },
+  { key: 'relative', label: '相对强度分', tip: '相对市场波动强度' },
+  { key: 'riskPenalty', label: '风险分', tip: '风险控制评分' }
 ]
 
-
-// 获取高级因子值
-const getFactorValue = (key) => {
-  if (!result.value) return 'N/A'
-  if (key === 'riskScore') return result.value?.score?.total ?? 'N/A' // 总分对应 riskScore
-  // 先在 advancedFactors 查，如果没有再去 score.factors
-  return result.value?.advancedFactors?.[key] ?? result.value?.score?.factors?.[key] ?? 'N/A'
+// --- 获取安全的因子值 ---
+const getSafeFactor = (key) => {
+  if (!result.value) return 0
+  const val = result.value.score?.factors?.[key] ?? result.value.advancedFactors?.[key] ?? 0
+  return Number(val).toFixed(2)
 }
 
-
-// 格式化指标显示
-const formatIndicator = (key, val) => {
-  if (!val && val !== 0) return 'N/A'
-
-  // RSI 保留一位小数
-  if (key === 'rsi') return parseFloat(val).toFixed(1)
-
-  // ATRRATIO 和 dailyChange 后端已经返回带 % 或数字，直接显示
-  if (key === 'atrRatio' || key === 'dailyChange') return val
-
-  // 其他指标直接显示
-  return val
+// --- 箭头与样式 ---
+const getTrendIcon = (key) => {
+  const val = Number(result.value?.score?.factors?.[key] ?? 0)
+  if (val > 0) return '↑'
+  if (val < 0) return '↓'
+  return '→'
+}
+const getTrendClass = (key) => {
+  const val = Number(result.value?.score?.factors?.[key] ?? 0)
+  if (val > 0) return 'trend-up'
+  if (val < 0) return 'trend-down'
+  return 'neutral'
 }
 
-
-// 核心逻辑：开始分析
+// --- 分析逻辑 ---
 const startAnalysis = async () => {
   if (!form.code) return ElMessage.warning('请输入代码')
   loading.value = true
@@ -213,14 +205,14 @@ const startAnalysis = async () => {
     result.value = res.data
     ElMessage.success('推演成功')
   } catch (err) {
-    ElMessage.error('接口异常')
     console.error(err)
+    ElMessage.error('接口异常')
   } finally {
     loading.value = false
   }
 }
 
-// 历史记录
+// --- 历史记录 ---
 const openHistory = async () => {
   historyDrawer.value = true
   historyLoading.value = true
@@ -233,14 +225,13 @@ const openHistory = async () => {
     }
   } catch (err) {
     console.error(err)
-    historyList.value = []
     ElMessage.error('无法获取历史记录')
+    historyList.value = []
   } finally {
     historyLoading.value = false
   }
 }
 
-// 加载历史记录
 const loadBack = (row) => {
   result.value = row.data
   form.code = row.symbol
@@ -249,19 +240,17 @@ const loadBack = (row) => {
   ElMessage.success('已加载历史推演数据')
 }
 
-// 样式辅助
+// --- 样式函数 ---
 const getDecisionClass = (dec) => {
   if (!dec) return 'is-hold'
   if (dec.includes('BUY')) return 'is-buy'
   if (dec.includes('SELL')) return 'is-sell'
   return 'is-hold'
 }
-
 const getTypeTag = (type) => {
-  const map = { 'sh': 'danger', 'sz': 'success', 'etf': 'warning' }
+  const map = { sh: 'danger', sz: 'success', etf: 'warning' }
   return map[type] || 'info'
 }
-
 const getDecisionColor = (dec) => {
   if (!dec) return '#999'
   if (dec.includes('BUY')) return '#67c23a'
@@ -300,7 +289,7 @@ const getDecisionColor = (dec) => {
   min-width: 100px;
 }
 
-/* 核心结论 */
+/* 股票信息 */
 .stock-header {
   display: flex;
   justify-content: space-between;
@@ -324,6 +313,7 @@ const getDecisionColor = (dec) => {
   color: #cf4444;
 }
 
+/* 决策框 */
 .decision-box {
   padding: 20px;
   border-radius: 12px;
@@ -359,7 +349,7 @@ const getDecisionColor = (dec) => {
   border: 1px solid #e9e9eb;
 }
 
-/* 章节 */
+/* 核心指标 */
 .section-title {
   margin: 25px 0 15px;
   font-size: 16px;
@@ -394,7 +384,27 @@ const getDecisionColor = (dec) => {
   cursor: help;
 }
 
-/* 历史列表详情 */
+/* 高级因子 */
+.advanced-card .f-value {
+  font-weight: bold;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.trend-up {
+  color: #67c23a;
+}
+
+.trend-down {
+  color: #f56c6c;
+}
+
+.neutral {
+  color: #909399;
+}
+
+/* 历史详情 */
 .json-detail {
   max-height: 300px;
   overflow-y: auto;
@@ -411,6 +421,7 @@ const getDecisionColor = (dec) => {
   white-space: pre-wrap;
 }
 
+/* 页脚 */
 .footer-info {
   margin-top: 30px;
   padding: 15px;
@@ -420,13 +431,6 @@ const getDecisionColor = (dec) => {
   color: #999;
   line-height: 1.6;
 }
-
-.score {
-  font-size: 13px;
-  margin-top: 6px;
-  opacity: 0.75;
-}
-
 
 @media (max-width: 600px) {
   .indicator-grid {
