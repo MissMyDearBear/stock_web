@@ -6,7 +6,7 @@
 
     <nav class="menu">
       <router-link v-for="item in menuList" :key="item.path" :to="item.path" class="menu-item" active-class="is-active"
-        @click="handleClick">
+        exact-active-class="is-active" @click="handleClick">
         <span class="label">{{ item.label }}</span>
       </router-link>
     </nav>

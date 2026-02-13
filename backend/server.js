@@ -272,7 +272,21 @@ const analyzeEngine = {
         } catch {
             return null;
         }
+    },
+
+    fetchWeekKlines: async (fullId) => {
+        const url = `https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param=${fullId},week,,,120,qfq`;
+        try {
+            const resp = await axios.get(url);
+            const data = resp.data.data[fullId];
+            const kline = data.week;
+            if (!kline) return null;
+            return kline.map(i => +i[2]);
+        } catch {
+            return null;
+        }
     }
+
 };
 
 // =============================
@@ -315,135 +329,265 @@ function calculateSharpe(closes) {
 // =============================
 // 主接口
 // =============================
+// =============================
+// 主接口 - 专业版
+// =============================
 app.get("/api/market/analysis/:code", async (req, res) => {
-
     const { code } = req.params;
     const { type } = req.query;
 
-    if (!type) return res.status(400).json({ error: "请提供 type 参数" });
+    if (!type)
+        return res.status(400).json({ error: "请提供 type 参数" });
 
     try {
-
         const fullId = analyzeEngine.formatFullId(code, type);
 
-        const [kData, indexData, name] = await Promise.all([
+        const [kData, indexData, weekClose, name] = await Promise.all([
             analyzeEngine.fetchKlines(fullId),
             analyzeEngine.fetchIndexKlines(),
+            analyzeEngine.fetchWeekKlines(fullId),
             analyzeEngine.fetchStockName(fullId)
         ]);
 
         if (!kData || kData.length < 120)
             return res.status(404).json({ error: "行情数据不足" });
 
+        // =============================
+        // 基础数据
+        // =============================
         const close = kData.map(d => d.Close);
         const high = kData.map(d => d.High);
         const low = kData.map(d => d.Low);
+        const volume = kData.map(d => d.Volume);
 
         const last = kData.at(-1);
         const prev = kData.at(-2);
 
-        let buyScore = 0, sellScore = 0;
-        let riskScore = 0;
+        const pct = (last.Close - prev.Close) / prev.Close; // 小数形式
+        const price = +last.Close;
 
-        // ===== 技术指标 =====
-
+        // =============================
+        // 技术指标计算
+        // =============================
         const sma5 = TI.SMA.calculate({ period: 5, values: close });
         const sma20 = TI.SMA.calculate({ period: 20, values: close });
         const sma60 = TI.SMA.calculate({ period: 60, values: close });
         const rsi = TI.RSI.calculate({ period: 7, values: close });
         const atr = TI.ATR.calculate({ high, low, close, period: 14 });
+        const volSMA5 = TI.SMA.calculate({ period: 5, values: volume });
 
+        const macd = TI.MACD.calculate({
+            values: close,
+            fastPeriod: 12,
+            slowPeriod: 26,
+            signalPeriod: 9,
+            SimpleMAOscillator: false,
+            SimpleMASignal: false
+        });
+
+        const kdj = TI.Stochastic.calculate({
+            high, low, close,
+            period: 9,
+            signalPeriod: 3
+        });
+
+        const lastSMA5 = sma5.at(-1);
+        const prevSMA5 = sma5.at(-2);
+        const lastSMA20 = sma20.at(-1);
+        const lastSMA60 = sma60.at(-1);
         const lastRSI = rsi.at(-1);
         const lastATR = atr.at(-1);
+        const lastVol = volume.at(-1);
+        const lastVolMA = volSMA5.at(-1);
+        const lastMACD = macd.at(-1);
+        const prevMACD = macd.at(-2);
+        const lastKDJ = kdj.at(-1);
+
         const atrRatio = lastATR / last.Close;
 
-        // ===== ATR 因子 =====
-        if (atrRatio > 0.05) { sellScore += 2; riskScore += 15; }
-        else if (atrRatio < 0.02) { buyScore += 1; }
+        // =============================
+        // 1️⃣ 趋势因子
+        // =============================
+        let trendScore = 0;
+        if (last.Close > lastSMA5) trendScore++;
+        if (lastSMA5 > lastSMA20) trendScore++;
+        if (lastSMA20 > lastSMA60) trendScore++;
+        if (prevSMA5 && lastSMA5 > prevSMA5) trendScore++;
 
-        // ===== 涨跌停识别 =====
-        const pct = (last.Close - prev.Close) / prev.Close * 100;
-        if (pct >= 9.8) { sellScore += 2; riskScore += 10; }
-        if (pct <= -9.8) { buyScore += 2; }
+        // =============================
+        // 2️⃣ 动量因子
+        // =============================
+        let momentumScore = 0;
 
-        // ===== 多周期共振 =====
-        let resonance = 0;
-        if (last.Close > sma5.at(-1)) resonance++;
-        if (sma5.at(-1) > sma20.at(-1)) resonance++;
-        if (sma20.at(-1) > sma60.at(-1)) resonance++;
-
-        buyScore += resonance;
-
-        // ===== RSI =====
-        if (lastRSI > 70) { sellScore += 2; riskScore += 10; }
-        if (lastRSI < 30) { buyScore += 2; }
-
-        // ===== Beta =====
-        let beta = 0;
-        if (indexData) {
-            beta = calculateBeta(close.slice(-120), indexData.slice(-120));
-            if (beta > 1.2) riskScore += 10;
-            if (beta < 0.8) buyScore += 1;
+        if (prevMACD && lastMACD) {
+            if (prevMACD.MACD < prevMACD.signal &&
+                lastMACD.MACD > lastMACD.signal) {
+                momentumScore += 2;
+            }
         }
 
-        // ===== Sharpe =====
+        if (lastKDJ && lastKDJ.k > lastKDJ.d) momentumScore++;
+        if (lastRSI > 50 && lastRSI < 70) momentumScore++;
+
+        // =============================
+        // 3️⃣ 量能因子
+        // =============================
+        let volumeScore = 0;
+
+        if (lastVolMA) {
+            if (lastVol > lastVolMA * 1.3 && pct > 0) volumeScore += 2;
+            if (lastVol > lastVolMA * 1.3 && pct < 0) volumeScore -= 2;
+        }
+
+        // =============================
+        // 4️⃣ 吸筹识别
+        // =============================
+        let accumulationScore = 0;
+
+        const recentCloses = close.slice(-15);
+        const maxClose = Math.max(...recentCloses);
+        const minClose = Math.min(...recentCloses);
+        const rangeRatio = (maxClose - minClose) / minClose;
+
+        const recentVol = volume.slice(-10);
+        const prevVol = volume.slice(-20, -10);
+
+        const avgRecentVol =
+            recentVol.reduce((a, b) => a + b, 0) / recentVol.length;
+
+        const avgPrevVol =
+            prevVol.reduce((a, b) => a + b, 0) / prevVol.length;
+
+        const prevATR = atr.at(-5);
+
+        if (
+            rangeRatio < 0.08 &&
+            avgRecentVol < avgPrevVol * 0.8 &&
+            prevATR &&
+            lastATR < prevATR
+        ) {
+            accumulationScore += 3;
+        }
+
+        // =============================
+        // 5️⃣ 多周期共振
+        // =============================
+        let multiTimeframeScore = 0;
+
+        if (weekClose && weekClose.length > 20) {
+            const weekSMA5 = TI.SMA.calculate({ period: 5, values: weekClose });
+            const weekSMA20 = TI.SMA.calculate({ period: 20, values: weekClose });
+
+            if (weekSMA5.at(-1) > weekSMA20.at(-1)) {
+                multiTimeframeScore += 2;
+            }
+        }
+
+        // =============================
+        // 6️⃣ 相对强度
+        // =============================
+        let relativeScore = 0;
+        let beta = 0;
+
+        if (indexData && indexData.length >= 120) {
+            beta = calculateBeta(
+                close.slice(-120),
+                indexData.slice(-120)
+            );
+        }
+
         const sharpe = calculateSharpe(close.slice(-120));
-        if (sharpe > 0.8) buyScore += 2;
-        if (sharpe < 0.2) sellScore += 2;
 
-        // ===== 概率模型 =====
-        const raw = buyScore - sellScore;
-        const prob = 1 / (1 + Math.exp(-raw / 3));
+        if (beta < 0.8) relativeScore++;
+        if (sharpe > 0.8) relativeScore += 2;
+        if (sharpe < 0.2) relativeScore -= 2;
 
-        const buyProb = +(prob * 100).toFixed(1);
-        const sellProb = +(100 - buyProb).toFixed(1);
+        // =============================
+        // 7️⃣ 风险控制
+        // =============================
+        let riskPenalty = 0;
 
-        riskScore = Math.min(100, riskScore + atrRatio * 800).toFixed(1);
+        if (last.Close < lastSMA60) riskPenalty += 2;
+        if (pct < -0.05) riskPenalty += 1;
+        if (atrRatio > 0.06) riskPenalty += 2;
+
+        // =============================
+        // 总评分
+        // =============================
+        const totalScore =
+            trendScore * 0.25 +
+            momentumScore * 0.2 +
+            volumeScore * 0.15 +
+            accumulationScore * 0.15 +
+            multiTimeframeScore * 0.15 +
+            relativeScore * 0.1 -
+            riskPenalty;
+
+        // 稍微平滑 sigmoid
+        const prob = 1 / (1 + Math.exp(-totalScore * 0.8));
+
+        const buyProb = prob;
+        const sellProb = 1 - prob;
 
         let decision = "HOLD";
-        if (buyProb > 65) decision = "BUY";
-        if (sellProb > 65) decision = "SELL";
-        const ret = {
+
+        if (totalScore >= 3) decision = "STRONG BUY";
+        else if (totalScore >= 1.5) decision = "BUY";
+        else if (totalScore <= -3) decision = "STRONG SELL";
+        else if (totalScore <= -1.5) decision = "SELL";
+
+        // =============================
+        // 返回结构（纯数值版）
+        // =============================
+        const result = {
             code,
             name,
             fullId,
             date: last.Date,
-            price: last.Close,
-            decision,
-            probability: {
-                buy: buyProb,
-                sell: sellProb
-            },
-            riskScore,
-            advancedFactors: {
-                beta: beta.toFixed(2),
-                sharpe: sharpe.toFixed(2),
-                resonance
-            },
-            indicators: {
-                rsi: lastRSI.toFixed(1),
-                atrRatio: (atrRatio * 100).toFixed(2) + "%",
-                dailyChange: pct.toFixed(2) + "%"
-            }
-        }
-        const jsonString = JSON.stringify(ret);
-        console.log(jsonString);
-        await Suppose.findOneAndUpdate(
-            { symbol: code }, // 查询条件
-            {
-                symbol: code,
-                name: name, // ret 对象中的名称
-                type: type, // 前端传来的 sh/sz/etf
-                suppose: jsonString, // 存入转换后的字符串
-                updatedAt: Date.now()
-            },
-            { upsert: true, new: true } // 如果不存在则创建
-        );
+            price,
 
-        res.json(ret);
+            decision,
+
+            probability: {
+                buy: +buyProb.toFixed(4),
+                sell: +sellProb.toFixed(4)
+            },
+
+            score: {
+                total: +totalScore.toFixed(2),
+                factors: {
+                    trend: trendScore,
+                    momentum: momentumScore,
+                    volume: volumeScore,
+                    accumulation: accumulationScore,
+                    multiTimeframe: multiTimeframeScore,
+                    relative: relativeScore,
+                    riskPenalty
+                }
+            },
+
+            advancedFactors: {
+                beta: +beta.toFixed(4),
+                sharpe: +sharpe.toFixed(4)
+            },
+
+            indicators: {
+                rsi: +lastRSI.toFixed(2),
+                atrRatio: +atrRatio.toFixed(4),
+                dailyChange: +pct.toFixed(4)
+            }
+        };
+
+        console.log(JSON.stringify(result));
+
+        res.json(result);
 
     } catch (err) {
-        res.status(500).json({ error: "分析失败", message: err.message });
+        console.error(err);
+        res.status(500).json({
+            error: "分析失败",
+            message: err.message
+        });
     }
 });
 
@@ -486,7 +630,7 @@ app.get('/api/market/suppose/list', async (req, res) => {
     }
 });
 // --- 3. 启动服务 ---
-const PORT = 3500;
+const PORT = 3000;
 app.listen(PORT, () => {
     console.log(`🚀 后端服务已启动: http://localhost:${PORT}`);
 });
