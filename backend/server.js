@@ -580,6 +580,25 @@ app.get("/api/market/analysis/:code", async (req, res) => {
 
         console.log(JSON.stringify(result));
 
+        try {
+            await Suppose.findOneAndUpdate(
+                { symbol: code }, // 以代码作为唯一标识
+                {
+                    symbol: code,
+                    name: name,
+                    type: type, // 来自 req.query 的 'sh'/'sz'/'etf'
+                    suppose: JSON.stringify(result), // 将完整的 result 对象转为字符串存储
+                    updatedAt: new Date() // 更新时间
+                },
+                {
+                    upsert: true, // 如果不存在则创建
+                    new: true,    // 返回更新后的文档
+                    setDefaultsOnInsert: true // 如果是新增，应用 Schema 的默认值
+                }
+            );
+        } catch (dbErr) {
+            console.error("Database Save Error:", dbErr);
+        }
         res.json(result);
 
     } catch (err) {
