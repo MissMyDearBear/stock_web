@@ -630,7 +630,7 @@ app.get('/api/market/suppose/list', async (req, res) => {
     }
 });
 // --- 3. 启动服务 ---
-const PORT = 3000;
+const PORT = 3500;
 app.listen(PORT, () => {
     console.log(`🚀 后端服务已启动: http://localhost:${PORT}`);
 });
